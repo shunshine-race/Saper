@@ -1,229 +1,177 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saper</title>
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <title>Publiczny Chat P2P</title>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.3.1/dist/peerjs.min.js"></script>
     <style>
         body {
-            background-color: #121212;
-            color: #fff;
-            font-family: 'Press Start 2P', sans-serif;
+            font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start;
             align-items: center;
+            justify-content: center;
             height: 100vh;
             margin: 0;
-            padding-top: 50px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
-        #game {
-            display: grid;
-            grid-template-columns: repeat(10, 40px);
-            grid-template-rows: repeat(10, 40px);
-            gap: 2px;
-            margin-top: 20px;
+        #header {
+            width: 80%;
+            margin-bottom: 10px;
         }
-        .cell {
-            width: 40px;
-            height: 40px;
-            background-color: #1e1e1e;
+        #peerIdDisplay {
+            margin-bottom: 10px;
             display: flex;
-            justify-content: center;
             align-items: center;
-            font-size: 18px;
-            cursor: pointer;
-            border-radius: 5px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: background-color 0.3s;
         }
-        .cell.revealed {
-            background-color: #333;
-            cursor: default;
+        #peerId {
+            margin-right: 10px;
         }
-        .cell.mine {
-            background-color: red;
+        #connectInput, #connectButton, #copyButton {
+            margin-bottom: 10px;
         }
-        .cell:hover {
-            background-color: #333;
+        #chat {
+            border: 1px solid #ccc;
+            width: 80%;
+            height: 60vh;
+            overflow-y: scroll;
+            padding: 10px;
+            margin-bottom: 10px;
         }
-        .cell.flagged::after {
-            content: '🚩';
-        }
-        .title {
-            font-size: 2em;
-            margin-bottom: 20px;
-        }
-        .timer {
-            font-size: 1.5em;
-            margin-bottom: 20px;
-        }
-        .message {
-            font-size: 1.5em;
-            margin-top: 20px;
-        }
-        .play-again {
-            display: none;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: #ff0000;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 1em;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: background-color 0.3s;
-        }
-        .play-again:hover {
-            background-color: #cc0000;
+        #messageInput, #fileInput {
+            width: 80%;
+            padding: 10px;
+            margin-bottom: 10px;
         }
     </style>
 </head>
 <body>
-    <div class="title">Saper</div>
-    <div class="timer" id="timer">00:00.000</div>
-    <div id="game"></div>
-    <div class="message" id="message"></div>
-    <button class="play-again" id="play-again" onclick="resetGame()">Zagraj ponownie</button>
+    <div id="header">
+        <div id="peerIdDisplay">
+            Twój Peer ID: <span id="peerId">Ładowanie...</span>
+            <button id="copyButton" onclick="copyPeerId()">Kopiuj</button>
+        </div>
+        <input type="text" id="connectInput" placeholder="Wpisz Peer ID znajomego...">
+        <button id="connectButton" onclick="connectToInputPeer()">Połącz</button>
+    </div>
+    <div id="chat"></div>
+    <input type="text" id="messageInput" placeholder="Napisz wiadomość...">
+    <button onclick="sendMessage()">Wyślij</button>
+    <input type="file" id="fileInput">
+    <button onclick="sendFile()">Wyślij zdjęcie</button>
 
     <script>
-        const gameSize = 10;
-        const mineCount = 10;
-        const gameElement = document.getElementById('game');
-        const messageElement = document.getElementById('message');
-        const playAgainButton = document.getElementById('play-again');
-        const timerElement = document.getElementById('timer');
-        let mines = [];
-        let revealedCount = 0;
-        let startTime;
-        let timerInterval;
+        const peer = new Peer();
 
-        function initializeGame() {
-            gameElement.innerHTML = '';
-            messageElement.textContent = '';
-            playAgainButton.style.display = 'none';
-            mines = [];
-            revealedCount = 0;
-            startTime = null;
-            clearInterval(timerInterval);
-            timerElement.textContent = '00:00.000';
-            for (let i = 0; i < gameSize * gameSize; i++) {
-                const cell = document.createElement('div');
-                cell.classList.add('cell');
-                cell.dataset.index = i;
-                cell.addEventListener('click', handleCellClick);
-                cell.addEventListener('contextmenu', handleRightClick);
-                gameElement.appendChild(cell);
-            }
-            placeMines();
-        }
+        peer.on('open', (id) => {
+            document.getElementById('peerId').textContent = id;
+        });
 
-        function placeMines() {
-            let placedMines = 0;
-            while (placedMines < mineCount) {
-                const index = Math.floor(Math.random() * gameSize * gameSize);
-                if (!mines.includes(index)) {
-                    mines.push(index);
-                    placedMines++;
+        peer.on('connection', (conn) => {
+            conn.on('data', (data) => {
+                if (data.type === 'text') {
+                    displayMessage('Inny: ' + data.message);
+                } else if (data.type === 'file') {
+                    displayImage(data.message);
                 }
-            }
-        }
-
-        function handleCellClick(event) {
-            if (!startTime) {
-                startTime = Date.now();
-                timerInterval = setInterval(updateTimer, 10);
-            }
-            const cell = event.target;
-            const index = parseInt(cell.dataset.index);
-            if (cell.classList.contains('flagged')) return;
-            if (mines.includes(index)) {
-                cell.classList.add('mine');
-                revealAllMines();
-                messageElement.textContent = 'Przegrałeś! Zagraj ponownie.';
-                playAgainButton.style.display = 'block';
-                clearInterval(timerInterval);
-            } else {
-                revealCell(cell, index);
-            }
-        }
-
-        function handleRightClick(event) {
-            event.preventDefault();
-            const cell = event.target;
-            if (cell.classList.contains('revealed')) return;
-            cell.classList.toggle('flagged');
-        }
-
-        function revealCell(cell, index) {
-            if (cell.classList.contains('revealed')) return;
-            cell.classList.add('revealed');
-            revealedCount++;
-            const mineCount = countAdjacentMines(index);
-            if (mineCount > 0) {
-                cell.textContent = mineCount;
-            } else {
-                revealAdjacentCells(index);
-            }
-            if (revealedCount === gameSize * gameSize - mineCount) {
-                messageElement.textContent = 'Gratulacje! Wygrałeś!';
-                playAgainButton.style.display = 'block';
-                clearInterval(timerInterval);
-            }
-        }
-
-        function countAdjacentMines(index) {
-            const adjacentIndices = getAdjacentIndices(index);
-            return adjacentIndices.filter(i => mines.includes(i)).length;
-        }
-
-        function revealAdjacentCells(index) {
-            const adjacentIndices = getAdjacentIndices(index);
-            adjacentIndices.forEach(i => {
-                const cell = gameElement.children[i];
-                revealCell(cell, i);
             });
-        }
 
-        function getAdjacentIndices(index) {
-            const x = index % gameSize;
-            const y = Math.floor(index / gameSize);
-            const indices = [];
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dy = -1; dy <= 1; dy++) {
-                    if (dx === 0 && dy === 0) continue;
-                    const nx = x + dx;
-                    const ny = y + dy;
-                    if (nx >= 0 && nx < gameSize && ny >= 0 && ny < gameSize) {
-                        indices.push(ny * gameSize + nx);
+            conn.on('open', () => {
+                window.sendMessage = () => {
+                    const message = document.getElementById('messageInput').value;
+                    conn.send({ type: 'text', message: message });
+                    displayMessage('Ty: ' + message);
+                    document.getElementById('messageInput').value = '';
+                };
+
+                window.sendFile = () => {
+                    const fileInput = document.getElementById('fileInput');
+                    const file = fileInput.files[0];
+                    const reader = new FileReader();
+                    
+                    reader.onload = () => {
+                        const base64Data = reader.result;
+                        conn.send({ type: 'file', message: base64Data });
+                        displayImage(base64Data, 'Ty');
+                    };
+
+                    if (file) {
+                        reader.readAsDataURL(file);
                     }
-                }
-            }
-            return indices;
-        }
+                };
+            });
+        });
 
-        function revealAllMines() {
-            mines.forEach(index => {
-                const cell = gameElement.children[index];
-                cell.classList.add('mine');
+        function connectToPeer(peerId) {
+            const conn = peer.connect(peerId);
+            conn.on('open', () => {
+                console.log('Połączono z: ' + peerId);
+                conn.on('data', (data) => {
+                    if (data.type === 'text') {
+                        displayMessage('Inny: ' + data.message);
+                    } else if (data.type === 'file') {
+                        displayImage(data.message);
+                    }
+                });
+
+                window.sendMessage = () => {
+                    const message = document.getElementById('messageInput').value;
+                    conn.send({ type: 'text', message: message });
+                    displayMessage('Ty: ' + message);
+                    document.getElementById('messageInput').value = '';
+                };
+
+                window.sendFile = () => {
+                    const fileInput = document.getElementById('fileInput');
+                    const file = fileInput.files[0];
+                    const reader = new FileReader();
+                    
+                    reader.onload = () => {
+                        const base64Data = reader.result;
+                        conn.send({ type: 'file', message: base64Data });
+                        displayImage(base64Data, 'Ty');
+                    };
+
+                    if (file) {
+                        reader.readAsDataURL(file);
+                    }
+                };
             });
         }
 
-        function updateTimer() {
-            const elapsedTime = Date.now() - startTime;
-            const seconds = Math.floor(elapsedTime / 1000);
-            const milliseconds = elapsedTime % 1000;
-            timerElement.textContent = `${String(seconds).padStart(2, '0')}:${String(milliseconds).padStart(3, '0')}`;
+        function connectToInputPeer() {
+            const peerId = document.getElementById('connectInput').value;
+            connectToPeer(peerId);
         }
 
-        function resetGame() {
-            initializeGame();
+        function displayMessage(message) {
+            const chat = document.getElementById('chat');
+            const messageElement = document.createElement('div');
+            messageElement.textContent = message;
+            chat.appendChild(messageElement);
+            chat.scrollTop = chat.scrollHeight;
         }
 
-        initializeGame();
+        function displayImage(base64Data, sender = 'Inny') {
+            const chat = document.getElementById('chat');
+            const messageElement = document.createElement('div');
+            const image = document.createElement('img');
+            image.src = base64Data;
+            image.style.maxWidth = '100%';
+            messageElement.textContent = sender + ': ';
+            messageElement.appendChild(image);
+            chat.appendChild(messageElement);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function copyPeerId() {
+            const peerId = document.getElementById('peerId').textContent;
+            navigator.clipboard.writeText(peerId).then(() => {
+                alert('Peer ID skopiowane do schowka');
+            }).catch(err => {
+                console.error('Błąd podczas kopiowania Peer ID:', err);
+            });
+        }
     </script>
 </body>
 </html>
