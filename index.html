@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Publiczny Chat P2P</title>
+    <title>Kółko i Krzyżyk P2P</title>
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.3.1/dist/peerjs.min.js"></script>
     <style>
         body {
@@ -30,18 +30,21 @@
         #connectInput, #connectButton, #copyButton {
             margin-bottom: 10px;
         }
-        #chat {
-            border: 1px solid #ccc;
-            width: 80%;
-            height: 60vh;
-            overflow-y: scroll;
-            padding: 10px;
-            margin-bottom: 10px;
+        #gameBoard {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 5px;
         }
-        #messageInput, #fileInput {
-            width: 80%;
-            padding: 10px;
-            margin-bottom: 10px;
+        .cell {
+            width: 100px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2em;
+            border: 1px solid #000;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -54,114 +57,36 @@
         <input type="text" id="connectInput" placeholder="Wpisz Peer ID znajomego...">
         <button id="connectButton" onclick="connectToInputPeer()">Połącz</button>
     </div>
-    <div id="chat"></div>
-    <input type="text" id="messageInput" placeholder="Napisz wiadomość...">
-    <button onclick="sendMessage()">Wyślij</button>
-    <input type="file" id="fileInput">
-    <button onclick="sendFile()">Wyślij zdjęcie</button>
+    <div id="gameBoard"></div>
 
     <script>
         const peer = new Peer();
+        let conn;
+        let isMyTurn = false;
+        let symbol = 'X';  // 'X' for the first player, 'O' for the second
 
         peer.on('open', (id) => {
             document.getElementById('peerId').textContent = id;
         });
 
-        peer.on('connection', (conn) => {
-            conn.on('data', (data) => {
-                if (data.type === 'text') {
-                    displayMessage('Inny: ' + data.message);
-                } else if (data.type === 'file') {
-                    displayImage(data.message);
-                }
-            });
-
-            conn.on('open', () => {
-                window.sendMessage = () => {
-                    const message = document.getElementById('messageInput').value;
-                    conn.send({ type: 'text', message: message });
-                    displayMessage('Ty: ' + message);
-                    document.getElementById('messageInput').value = '';
-                };
-
-                window.sendFile = () => {
-                    const fileInput = document.getElementById('fileInput');
-                    const file = fileInput.files[0];
-                    const reader = new FileReader();
-                    
-                    reader.onload = () => {
-                        const base64Data = reader.result;
-                        conn.send({ type: 'file', message: base64Data });
-                        displayImage(base64Data, 'Ty');
-                    };
-
-                    if (file) {
-                        reader.readAsDataURL(file);
-                    }
-                };
-            });
+        peer.on('connection', (connection) => {
+            conn = connection;
+            conn.on('data', handleMove);
+            startGame('O');
         });
 
         function connectToPeer(peerId) {
-            const conn = peer.connect(peerId);
+            conn = peer.connect(peerId);
             conn.on('open', () => {
                 console.log('Połączono z: ' + peerId);
-                conn.on('data', (data) => {
-                    if (data.type === 'text') {
-                        displayMessage('Inny: ' + data.message);
-                    } else if (data.type === 'file') {
-                        displayImage(data.message);
-                    }
-                });
-
-                window.sendMessage = () => {
-                    const message = document.getElementById('messageInput').value;
-                    conn.send({ type: 'text', message: message });
-                    displayMessage('Ty: ' + message);
-                    document.getElementById('messageInput').value = '';
-                };
-
-                window.sendFile = () => {
-                    const fileInput = document.getElementById('fileInput');
-                    const file = fileInput.files[0];
-                    const reader = new FileReader();
-                    
-                    reader.onload = () => {
-                        const base64Data = reader.result;
-                        conn.send({ type: 'file', message: base64Data });
-                        displayImage(base64Data, 'Ty');
-                    };
-
-                    if (file) {
-                        reader.readAsDataURL(file);
-                    }
-                };
+                conn.on('data', handleMove);
+                startGame('X');
             });
         }
 
         function connectToInputPeer() {
             const peerId = document.getElementById('connectInput').value;
             connectToPeer(peerId);
-        }
-
-        function displayMessage(message) {
-            const chat = document.getElementById('chat');
-            const messageElement = document.createElement('div');
-            messageElement.textContent = message;
-            chat.appendChild(messageElement);
-            chat.scrollTop = chat.scrollHeight;
-        }
-
-        function displayImage(base64Data, sender = 'Inny') {
-            const chat = document.getElementById('chat');
-            const messageElement = document.createElement('div');
-            const image = document.createElement('img');
-            image.src = base64Data;
-            image.style.maxWidth = '100%';
-            messageElement.textContent = sender + ': ';
-            messageElement.appendChild(image);
-            chat.appendChild(messageElement);
-            chat.scrollTop = chat.scrollHeight;
         }
 
         function copyPeerId() {
@@ -171,6 +96,63 @@
             }).catch(err => {
                 console.error('Błąd podczas kopiowania Peer ID:', err);
             });
+        }
+
+        function startGame(startingSymbol) {
+            symbol = startingSymbol;
+            isMyTurn = (symbol === 'X');
+            initializeBoard();
+        }
+
+        function initializeBoard() {
+            const gameBoard = document.getElementById('gameBoard');
+            gameBoard.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.index = i;
+                cell.addEventListener('click', () => handleCellClick(cell));
+                gameBoard.appendChild(cell);
+            }
+        }
+
+        function handleCellClick(cell) {
+            if (!isMyTurn || cell.textContent !== '') return;
+            cell.textContent = symbol;
+            isMyTurn = false;
+            const move = { index: cell.dataset.index, symbol: symbol };
+            conn.send(move);
+            checkGameStatus();
+        }
+
+        function handleMove(move) {
+            const cell = document.querySelector(`.cell[data-index='${move.index}']`);
+            cell.textContent = move.symbol;
+            isMyTurn = true;
+            checkGameStatus();
+        }
+
+        function checkGameStatus() {
+            const cells = Array.from(document.querySelectorAll('.cell')).map(cell => cell.textContent);
+            const winningCombinations = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                [0, 4, 8], [2, 4, 6]
+            ];
+
+            for (const combination of winningCombinations) {
+                const [a, b, c] = combination;
+                if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) {
+                    alert(`${cells[a]} wygrywa!`);
+                    initializeBoard();
+                    return;
+                }
+            }
+
+            if (cells.every(cell => cell !== '')) {
+                alert('Remis!');
+                initializeBoard();
+            }
         }
     </script>
 </body>
